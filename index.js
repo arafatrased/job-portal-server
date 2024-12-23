@@ -1,16 +1,45 @@
 const express = require('express');
-const cors = require('cors')
+const cors = require('cors');
+const jwt = require('jsonwebtoken')
 const app = express()
 require('dotenv').config();
 
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const cookieParser = require('cookie-parser');
 
 
 //Middleware
 
-app.use(cors());
+app.use(cors({
+  origin:['http://localhost:5173'],
+  credentials: true // enable cookie to set in react client
+}));
 app.use(express.json());
+app.use(cookieParser())
+
+
+// Auth Middleware
+const logger = (req, res, next) => {
+  console.log('logger middleware')
+  next();
+};
+
+const verifyToken = (req, res, next) => {
+  const token = req?.cookies?.token;
+  if (!token) {
+    return res.status(401).send('Access Denied');
+  }
+  try {
+    const verified = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    req.user = verified;
+    next();
+  } catch (err) {
+    res.status(400).send('Invalid Token');
+  }
+}
+
+
 
 //jobportalbro
 //00m3sJMVsjiLFwX8
@@ -35,6 +64,27 @@ async function run() {
     const jobsCollection = client.db('jobPortal').collection('jobs');
     const jobApplicationCollection = client.db('jobPortal').collection('job_applications');
 
+    //Authentication apis
+    app.post('/jwt', async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '2h' })
+      res
+        .cookie('token', token, {
+          httpOnly: true,
+          secure: false,
+        })
+        .send({ success: true });
+    })
+
+    app.post('/logout', async (req, res) => {
+      res.clearCookie('token', {
+        httpOnly: true,
+        secure: false,
+
+      }).send({ success: true });
+    });
+
+
     app.get('/jobs', async (req, res) => {
       const email = req.query.email;
       let query = {};
@@ -53,10 +103,15 @@ async function run() {
       const result = await jobsCollection.findOne(query);
       res.send(result);
     });
-    app.get('/job-application', async (req, res) => {
+    app.get('/job-application', verifyToken, async (req, res) => {
       const email = req.query.email;
       const query = { applicant_email: email }
       const result = await jobApplicationCollection.find(query).toArray();
+      console.log(req.cookies?.token);
+      //tocken email and query email should be same
+      if(req.user.email !== req.query.email){
+        return res.status(403).send('Forbidden Access');
+      }
 
       // fokira way to aggregate data
       for (const application of result) {
@@ -85,6 +140,8 @@ async function run() {
     app.post('/job-applications', async (req, res) => {
       const application = req.body;
       const result = await jobApplicationCollection.insertOne(application);
+
+      
 
       // Not the best way (use aggregate) 
       // skip --> it
@@ -124,13 +181,13 @@ async function run() {
       const data = req.body;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = {
-          $set: {
-              status: data.status
-          }
+        $set: {
+          status: data.status
+        }
       }
       const result = await jobApplicationCollection.updateOne(filter, updatedDoc);
       res.send(result)
-  })
+    })
 
 
     // Send a ping to confirm a successful connection
