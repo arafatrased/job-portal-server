@@ -35,7 +35,7 @@ const verifyToken = (req, res, next) => {
     req.user = verified;
     next();
   } catch (err) {
-    res.status(400).send('Invalid Token');
+    res.status(403).send('Forbidden');
   }
 }
 
@@ -67,7 +67,7 @@ async function run() {
     //Authentication apis
     app.post('/jwt', async (req, res) => {
       const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '2h' })
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
       res
         .cookie('token', token, {
           httpOnly: true,
